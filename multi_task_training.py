@@ -143,7 +143,7 @@ class SimilarTaskTrainer(BaseTrainer):
         # Load the combined dataset directly
         try:
             dataset = load_dataset(DATASET_PATHS["sst2_mnli_qqp"])
-            print("Successfully loaded combined dataset from Hugging Face Hub")
+            print("Successfully loaded similar combined dataset from Hugging Face Hub")
             return dataset
         except Exception as e:
             print(f"Error loading combined dataset: {e}")
@@ -259,12 +259,12 @@ class DissimilarTaskTrainer(BaseTrainer):
         
         # Set random seed for reproducibility
         RANDOM_SEED = 42
-        SAMPLES_PER_TASK = 100000
+        SAMPLES_PER_TASK = 50000
         
         try:
             # Load the combined dataset
             dataset = load_dataset(DATASET_PATHS["qa_code_summarization"])
-            print("Successfully loaded combined dataset from Hugging Face Hub")
+            print("Successfully loaded dissimilar combined dataset from Hugging Face Hub")
             
             # Get train dataset
             train_dataset = dataset["train"]
@@ -287,6 +287,7 @@ class DissimilarTaskTrainer(BaseTrainer):
             balanced_train = Dataset.from_pandas(balanced_df)
             
             # Create new DatasetDict with balanced training data
+            print(f"Length of balanced train:", len(balanced_train))
             return DatasetDict({
                 "train": balanced_train,
                 "validation": dataset["validation"] if "validation" in dataset else None
@@ -330,7 +331,7 @@ class DissimilarTaskTrainer(BaseTrainer):
 
             # Shuffle the combined training data
             combined_train = concatenate_datasets(train_datasets).shuffle(seed=RANDOM_SEED)
-            
+            print(f"Length of combined train:", len(combined_train))
             return DatasetDict({
                 "train": combined_train,
                 "validation": concatenate_datasets(validation_datasets) if validation_datasets else None,
