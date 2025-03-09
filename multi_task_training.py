@@ -17,7 +17,7 @@ from transformers import (
     AutoModelForSequenceClassification,
     DataCollatorForSeq2Seq,
 )
-from datasets import load_dataset, concatenate_datasets, DatasetDict, Value
+from datasets import load_dataset, concatenate_datasets, DatasetDict, Value, Dataset
 from peft import get_peft_model, LoraConfig, TaskType
 import evaluate
 from config import (
@@ -39,6 +39,7 @@ from training_configs import (
 )
 
 from typing import Optional
+import pandas as pd
 
 # Ensure output directory exists
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -253,14 +254,44 @@ class DissimilarTaskTrainer(BaseTrainer):
         return model
 
     def load_dataset(self):
-        """Load multi-task generation dataset from Hugging Face Hub."""
+        """Load multi-task generation dataset from Hugging Face Hub with balanced sampling."""
         print("Loading multi-task generation dataset...")
         
-        # Load the combined dataset directly
+        # Set random seed for reproducibility
+        RANDOM_SEED = 42
+        SAMPLES_PER_TASK = 100000
+        
         try:
+            # Load the combined dataset
             dataset = load_dataset(DATASET_PATHS["qa_code_summarization"])
             print("Successfully loaded combined dataset from Hugging Face Hub")
-            return dataset
+            
+            # Get train dataset
+            train_dataset = dataset["train"]
+            
+            # Group by task
+            task_groups = train_dataset.to_pandas().groupby("task")
+            
+            # Sample equal number of examples from each task
+            balanced_dfs = []
+            for task, group in task_groups:
+                if len(group) > SAMPLES_PER_TASK:
+                    sampled = group.sample(n=SAMPLES_PER_TASK, random_state=RANDOM_SEED)
+                else:
+                    print(f"Warning: Task {task} has fewer than {SAMPLES_PER_TASK} examples. Using all available examples.")
+                    sampled = group
+                balanced_dfs.append(sampled)
+            
+            # Combine sampled datasets
+            balanced_df = pd.concat(balanced_dfs).sample(frac=1, random_state=RANDOM_SEED)  # Shuffle
+            balanced_train = Dataset.from_pandas(balanced_df)
+            
+            # Create new DatasetDict with balanced training data
+            return DatasetDict({
+                "train": balanced_train,
+                "validation": dataset["validation"] if "validation" in dataset else None
+            })
+            
         except Exception as e:
             print(f"Error loading combined dataset: {e}")
             print("Falling back to loading individual datasets...")
@@ -271,7 +302,18 @@ class DissimilarTaskTrainer(BaseTrainer):
                 try:
                     dataset = load_dataset(DATASET_PATHS[task])
                     print(f"Loaded {task} dataset")
-                    datasets.append(dataset)
+                    
+                    # Sample from training set
+                    train_data = dataset["train"]
+                    if len(train_data) > SAMPLES_PER_TASK:
+                        train_data = train_data.shuffle(seed=RANDOM_SEED).select(range(SAMPLES_PER_TASK))
+                    else:
+                        print(f"Warning: Task {task} has fewer than {SAMPLES_PER_TASK} examples. Using all available examples.")
+                    
+                    datasets.append(DatasetDict({
+                        "train": train_data,
+                        "validation": dataset["validation"] if "validation" in dataset else None
+                    }))
                 except Exception as e:
                     print(f"Error loading {task} dataset: {e}")
                     continue
@@ -286,8 +328,11 @@ class DissimilarTaskTrainer(BaseTrainer):
                 if "validation" in ds and ds["validation"] is not None
             ]
 
+            # Shuffle the combined training data
+            combined_train = concatenate_datasets(train_datasets).shuffle(seed=RANDOM_SEED)
+            
             return DatasetDict({
-                "train": concatenate_datasets(train_datasets),
+                "train": combined_train,
                 "validation": concatenate_datasets(validation_datasets) if validation_datasets else None,
             })
 
