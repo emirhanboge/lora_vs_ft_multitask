@@ -1,5 +1,5 @@
 """
-Training configurations for TreeMark.
+Training configurations
 
 This module contains all training configurations for both similar and dissimilar tasks,
 including different LoRA ranks and full fine-tuning settings.
@@ -40,7 +40,7 @@ class TrainingConfig:
     # Saving and logging
     save_total_limit: int = 10
     logging_steps: int = 10
-    save_steps: int = 500 if task_type == "similar" else 350
+    save_steps: int = 300 if task_type == "dissimilar" else 500
     fp16: bool = False
     bf16: bool = True
     max_grad_norm: float = 1.0
