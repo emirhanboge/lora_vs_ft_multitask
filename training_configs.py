@@ -40,7 +40,7 @@ class TrainingConfig:
     # Saving and logging
     save_total_limit: int = 10
     logging_steps: int = 10
-    save_steps: int = 500
+    save_steps: int = 500 if task_type == "similar" else 350
     fp16: bool = False
     bf16: bool = True
     max_grad_norm: float = 1.0
@@ -134,11 +134,11 @@ DISSIMILAR_TASK_CONFIGS = [
         tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=False,
-        batch_size=16,
+        batch_size=4,
+        gradient_accumulation_steps=16,
         epochs=3,
         learning_rate=1e-5,
         weight_decay=0,
-        gradient_accumulation_steps=4,
     ),
     
     # LoRA configurations
@@ -148,8 +148,8 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=4,
-        batch_size=2,
-        gradient_accumulation_steps=16,  # Increased from 4 to 16 for effective batch size of 32
+        batch_size=4,
+        gradient_accumulation_steps=16,  # Effective batch size = 2 * 16 = 32
         epochs=3,
     ),
     TrainingConfig(
@@ -158,7 +158,8 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=8,
-        batch_size=16,
+        batch_size=4,
+        gradient_accumulation_steps=16,
         epochs=3,
     ),
     TrainingConfig(
@@ -167,7 +168,8 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=16,  # Original baseline
-        batch_size=16,
+        batch_size=4,
+        gradient_accumulation_steps=16,
         epochs=3,
     ),
     TrainingConfig(
@@ -176,7 +178,8 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=32,
-        batch_size=16,
+        batch_size=4,
+        gradient_accumulation_steps=16,
         epochs=3,
     ),
     TrainingConfig(
@@ -185,7 +188,8 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=64,
-        batch_size=16,
+        batch_size=4,
+        gradient_accumulation_steps=16,
         epochs=3,
     ),
 ]

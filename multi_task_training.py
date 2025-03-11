@@ -234,11 +234,10 @@ class SimilarTaskTrainer(BaseTrainer):
         logger.info(f"Training complete. Model saved to {training_args.output_dir}")
 
 class DissimilarTaskTrainer(BaseTrainer):
-    """Trainer for dissimilar tasks (generation)."""
+    """Trainer for dissimilar tasks."""
     
     def get_model(self):
         """Get the model for dissimilar tasks."""
-        # Clear CUDA cache before loading model
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
@@ -260,258 +259,159 @@ class DissimilarTaskTrainer(BaseTrainer):
         return model
     
     def load_dataset(self):
-        """Load and preprocess datasets for dissimilar tasks."""
-        # Get the combined dataset name
+        """Load the combined dataset from Hugging Face Hub."""
         combined_dataset_name = self._get_combined_dataset_name()
         
-        # Load combined dataset from Hub
+        # Check if the dataset exists on the Hub
         logger.info(f"Loading combined dataset from Hugging Face Hub: {combined_dataset_name}")
+        
         try:
-            combined_dataset = load_dataset(f"{HF_USERNAME}/{combined_dataset_name}")
+            # Load the dataset directly from the Hub
+            dataset = load_dataset(f"emirhanboge/{combined_dataset_name}")
+            
+            # Check if the dataset has validation and test splits
+            has_validation = "validation" in dataset
+            has_test = "test" in dataset
+            
+            if has_validation and has_test:
+                logger.info("Using existing train, validation, and test splits from the Hub")
+                train_dataset = dataset["train"]
+                val_dataset = dataset["validation"]
+                test_dataset = dataset["test"]
+            elif has_validation:
+                logger.info("Using existing train and validation splits from the Hub (no test split found)")
+                train_dataset = dataset["train"]
+                val_dataset = dataset["validation"]
+                # Create test split from validation
+                val_size = len(val_dataset)
+                test_size = val_size // 2
+                shuffled_val = val_dataset.shuffle(seed=42)
+                val_dataset = shuffled_val.select(range(val_size - test_size))
+                test_dataset = shuffled_val.select(range(val_size - test_size, val_size))
+            else:
+                # If no validation or test splits, create them from the train split
+                logger.info("No validation or test splits found, creating them from the train split")
+                train_dataset = dataset["train"]
+                
+                # Calculate sizes for train, validation, and test
+                total_size = len(train_dataset)
+                test_size = min(int(total_size * 0.1), 5000)  # 10% or max 5000 examples for test
+                val_size = min(int(total_size * 0.1), 5000)   # 10% or max 5000 examples for validation
+                train_size = total_size - val_size - test_size
+                
+                logger.info(f"Total dataset size: {total_size}, using {train_size} for training, {val_size} for validation, and {test_size} for testing")
+                
+                # Shuffle the dataset with a fixed seed
+                shuffled_dataset = train_dataset.shuffle(seed=42)
+                
+                # Create train, validation, and test splits
+                train_dataset = shuffled_dataset.select(range(train_size))
+                val_dataset = shuffled_dataset.select(range(train_size, train_size + val_size))
+                test_dataset = shuffled_dataset.select(range(train_size + val_size, total_size))
             
             # Sample EXAMPLES_PER_TASK examples for each task
-            sampled_train_datasets = []
-            sampled_eval_datasets = []
+            sampled_train = []
+            sampled_val = []
             
             for task in self.config.tasks:
                 # Filter train dataset for current task
-                task_train = combined_dataset["train"].filter(lambda x: x["task"] == task)
+                task_train = train_dataset.filter(lambda x: x["task"] == task)
                 if len(task_train) > EXAMPLES_PER_TASK:
                     # Randomly sample EXAMPLES_PER_TASK examples
                     task_train = task_train.shuffle(seed=42).select(range(EXAMPLES_PER_TASK))
-                sampled_train_datasets.append(task_train)
+                sampled_train.append(task_train)
                 
                 # Filter validation dataset for current task
-                task_val = combined_dataset["validation"].filter(lambda x: x["task"] == task)
+                task_val = val_dataset.filter(lambda x: x["task"] == task)
                 # For validation, take 10% of EXAMPLES_PER_TASK or all examples if less
                 val_size = min(len(task_val), EXAMPLES_PER_TASK // 10)
                 if len(task_val) > val_size:
-                    task_val = task_val.shuffle(seed=42).select(range(val_size))
-                sampled_eval_datasets.append(task_val)
+                    task_val = task_val.shuffle(seed=123).select(range(val_size))
+                sampled_val.append(task_val)
             
             # Combine sampled datasets
-            self.train_dataset = concatenate_datasets(sampled_train_datasets)
-            self.eval_dataset = concatenate_datasets(sampled_eval_datasets)
+            self.train_dataset = concatenate_datasets(sampled_train)
+            self.eval_dataset = concatenate_datasets(sampled_val)
             
-            logger.info(f"Successfully loaded and sampled dataset from Hub: {combined_dataset_name}")
+            # Process datasets to ensure proper format for training
+            self.train_dataset = self._process_dataset_for_training(self.train_dataset)
+            self.eval_dataset = self._process_dataset_for_training(self.eval_dataset)
+            
+            logger.info(f"Successfully loaded dataset from Hub: {combined_dataset_name}")
             logger.info(f"Train dataset size: {len(self.train_dataset)}, Validation dataset size: {len(self.eval_dataset)}")
-            return
             
+            return
         except Exception as e:
             logger.error(f"Error loading dataset from Hub: {str(e)}")
-            logger.error("Please run with --prepare-datasets-only first to create and upload the datasets to the Hub")
+            logger.error("Please check that the dataset exists on the Hub")
             raise
     
-    def _get_combined_dataset_name(self) -> str:
-        """Get the name for the combined dataset based on tasks."""
-        if set(self.config.tasks) == {"squad_v2", "codex_glue"}:
-            return "squad_v2_codex_glue_llama1b_modified"
-        elif set(self.config.tasks) == {"squad_v2", "codex_glue", "cnn_dailymail"}:
-            return "squad_v2_codex_glue_cnn_dailymail_llama1b_modified"
-        else:
-            # Create a name based on the tasks
-            task_names = [t.split("/")[-1] for t in self.config.tasks]
-            return f"{'_'.join(task_names)}_llama1b_modified"
-    
-    def _process_dataset(self, dataset: Dataset, task: str, force_process: bool = False) -> Dataset:
-        """Process a dataset for a specific task."""
-        # Check if dataset is already processed, unless force_process is True
-        if not force_process and all(col in dataset.column_names for col in ['input_ids', 'attention_mask', 'labels', 'task', 'raw_inputs', 'raw_labels']):
-            logger.info(f"Dataset already processed for task {task}, skipping processing...")
-            return dataset.remove_columns([col for col in dataset.column_names 
-                                        if col not in ['input_ids', 'attention_mask', 'labels', 'task', 'raw_inputs', 'raw_labels']])
-            
-        # Define task prefix
-        task_prefix = f"Task: {task} | "
+    def _process_dataset_for_training(self, dataset):
+        """Process dataset to ensure proper format for causal language modeling."""
         
-        # Process examples based on task type
-        def process_examples(examples):
-            input_texts = []
-            labels = []
+        def process_example(example):
+            # Get input_ids and labels
+            input_ids = example["input_ids"]
+            labels = example["labels"]
+            attention_mask = example["attention_mask"]
             
-            if task == "squad_v2":  # Question Answering
-                input_texts = [
-                    f"{task_prefix} Read the passage and answer. Context: {c} Question: {q}"
-                    for c, q in zip(examples["context"], examples["question"])
-                ]
-                labels = [a["text"][0] if a["text"] else "" for a in examples["answers"]]
+            # For causal LM, we need to create a single sequence
+            # Create combined input_ids by concatenating input_ids and labels
+            combined_input_ids = input_ids + labels
             
-            elif task == "codex_glue":  # Code Generation
-                input_texts = [
-                    f"{task_prefix} Generate a description for the following code snippet:\n{code}"
-                    for code in examples["original_string"]
-                ]
-                labels = examples["docstring"]
+            # Create combined attention_mask
+            combined_attention_mask = attention_mask + [1] * len(labels)
             
-            elif task == "cnn_dailymail":  # Summarization
-                input_texts = [
-                    f"{task_prefix} Summarize this news article:\n{article}"
-                    for article in examples["article"]
-                ]
-                labels = examples["highlights"]
+            # Create labels with -100 for input tokens
+            combined_labels = [-100] * len(input_ids) + labels
+            
+            # Make sure all sequences have the same length
+            max_length = min(len(combined_input_ids), 2048)  # Limit to 2048 tokens
+            
+            if len(combined_input_ids) > max_length:
+                combined_input_ids = combined_input_ids[:max_length]
+                combined_attention_mask = combined_attention_mask[:max_length]
+                # Ensure labels are properly aligned
+                if len(input_ids) < max_length:
+                    # Some of the label tokens are included
+                    label_portion = max_length - len(input_ids)
+                    combined_labels = [-100] * len(input_ids) + labels[:label_portion]
+                else:
+                    # All tokens are from input_ids
+                    combined_labels = [-100] * max_length
             
             return {
-                "input_texts": input_texts,
-                "labels": labels,
-                "raw_inputs": input_texts,
-                "raw_labels": labels
+                "input_ids": combined_input_ids,
+                "attention_mask": combined_attention_mask,
+                "labels": combined_labels,
+                "task": example["task"]
             }
         
-        logger.info(f"Processing examples for task {task}...")
-        # Process the examples with progress bar
-        processed = dataset.map(
-            process_examples,
-            batched=True,
-            remove_columns=dataset.column_names,
-            desc=f"Processing {task} examples",
-            load_from_cache_file=False  # Don't use cache to ensure fresh processing
+        # Apply processing to each example
+        processed_dataset = dataset.map(
+            process_example,
+            desc="Processing dataset for training"
         )
         
-        # Tokenize the processed examples
-        def tokenize_function(examples):
-            # Tokenize inputs without padding
-            model_inputs = self.tokenizer(
-                examples["input_texts"],
-                truncation=True,
-                padding=False,
-                add_special_tokens=True,  # This adds BOS token
-                return_attention_mask=True,
-                verbose=False  # Disable tokenizer warnings
-            )
-            
-            # Manually add EOS token to input_ids if not present
-            for i in range(len(model_inputs["input_ids"])):
-                if model_inputs["input_ids"][i][-1] != self.tokenizer.eos_token_id:
-                    model_inputs["input_ids"][i].append(self.tokenizer.eos_token_id)
-                    model_inputs["attention_mask"][i].append(1)
-            
-            # Tokenize labels without padding
-            labels = self.tokenizer(
-                examples["labels"],
-                truncation=True,
-                padding=False,
-                add_special_tokens=False,  # We'll add EOS manually
-                verbose=False  # Disable tokenizer warnings
-            )
-            
-            # Manually add EOS token to labels
-            model_inputs["labels"] = [
-                label_ids + [self.tokenizer.eos_token_id]
-                for label_ids in labels["input_ids"]
-            ]
-            
-            # Add task field and raw texts
-            model_inputs["task"] = [task] * len(examples["input_texts"])
-            model_inputs["raw_inputs"] = examples["raw_inputs"]
-            model_inputs["raw_labels"] = examples["raw_labels"]
-            
-            return model_inputs
-        
-        logger.info(f"Tokenizing examples for task {task}...")
-        # Apply tokenization with progress bar
-        tokenized_dataset = processed.map(
-            tokenize_function,
-            batched=True,
-            remove_columns=["input_texts", "labels"],
-            desc=f"Tokenizing {task} examples",
-            load_from_cache_file=False  # Don't use cache to ensure fresh processing
-        )
-        
-        # Cast features to ensure consistency
-        logger.info(f"Casting features for task {task}...")
-        feature_dtypes = {
-            "input_ids": Sequence(Value("int32")),
-            "attention_mask": Sequence(Value("int8")),
-            "labels": Sequence(Value("int64")),
-            "task": Value("string"),
-            "raw_inputs": Value("string"),
-            "raw_labels": Value("string")
-        }
-        
-        for col, dtype in feature_dtypes.items():
-            tokenized_dataset = tokenized_dataset.cast_column(col, dtype)
-        
-        logger.info(f"Completed processing dataset for task {task}")
-        return tokenized_dataset
+        return processed_dataset
     
-    def _upload_dataset(self, dataset_name: str, dataset_path: str):
-        """Upload a dataset to the Hugging Face Hub."""
-        if not HF_USERNAME or not HF_TOKEN:
-            logger.warning("HF_USERNAME or HF_TOKEN not set, skipping dataset upload")
-            return
-        
-        logger.info(f"Uploading dataset {dataset_name} to Hugging Face Hub...")
-        
-        try:
-            # Load dataset from disk
-            dataset = load_from_disk(dataset_path)
-            
-            # Create repository on Hugging Face with correct repo type
-            api = HfApi()
-            repo_id = f"{HF_USERNAME}/{dataset_name}"
-            api.create_repo(repo_id, exist_ok=True, token=HF_TOKEN, repo_type="dataset")
-            
-            # Push dataset to Hub
-            dataset.push_to_hub(repo_id, token=HF_TOKEN)
-            
-            # Create and upload README
-            readme_content = DATASET_DESCRIPTIONS.get(
-                dataset_name.replace("_llama1b_modified", ""),
-                f"# {dataset_name}\n\nPreprocessed dataset for LLaMA 1B model training."
-            )
-            
-            readme_path = os.path.join(dataset_path, "README.md")
-            with open(readme_path, "w") as f:
-                f.write(readme_content)
-            
-            api.upload_file(
-                path_or_fileobj=readme_path,
-                path_in_repo="README.md",
-                repo_id=repo_id,
-                token=HF_TOKEN,
-                repo_type="dataset"
-            )
-            
-            logger.info(f"Successfully uploaded {dataset_name} to {repo_id}")
-        
-        except Exception as e:
-            logger.error(f"Error uploading dataset {dataset_name}: {str(e)}")
+    def _get_combined_dataset_name(self) -> str:
+        """Get the name of the combined dataset."""
+        return "_".join(self.config.tasks) + "_llama1b_modified"
     
     def compute_metrics(self, eval_pred):
-        """Compute metrics for dissimilar tasks."""
-        predictions, labels = eval_pred
+        """Compute metrics for evaluation."""
+        logits, labels = eval_pred
         
-        # Decode predictions and labels
-        decoded_preds = self.tokenizer.batch_decode(predictions, skip_special_tokens=True)
+        # Shift logits and labels for loss calculation
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
         
-        # Replace -100 with pad token id
-        labels = torch.where(labels != -100, labels, self.tokenizer.pad_token_id)
-        decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
+        # Calculate loss
+        loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100)
+        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
         
-        # Compute ROUGE scores
-        rouge = evaluate.load("rouge")
-        rouge_scores = rouge.compute(
-            predictions=decoded_preds,
-            references=decoded_labels,
-            use_stemmer=True,
-        )
-        
-        # Compute BLEU score
-        bleu = evaluate.load("bleu")
-        bleu_score = bleu.compute(
-            predictions=decoded_preds,
-            references=[[label] for label in decoded_labels],
-        )
-        
-        # Combine metrics
-        metrics = {
-            "rouge1": rouge_scores["rouge1"],
-            "rouge2": rouge_scores["rouge2"],
-            "rougeL": rouge_scores["rougeL"],
-            "bleu": bleu_score["bleu"],
-        }
-        
-        return metrics
+        return {"loss": loss.item()}
     
     def train(self):
         """Train the model on dissimilar tasks."""
@@ -521,71 +421,66 @@ class DissimilarTaskTrainer(BaseTrainer):
         
         logger.info(f"Training model on tasks: {self.config.tasks}")
         
-        self.model = self.get_model()
+        # Get model and tokenizer
+        model = self.get_model()
+        
+        # Load dataset
         self.load_dataset()
         
-        training_args = self.get_training_args()
-        
-        # Custom collate function
+        # Create a custom data collator that ensures proper padding
         def custom_data_collator(features):
             # Convert list of dicts to dict of lists
             batch = {
-                k: [feature[k] for feature in features]
-                for k in features[0].keys()
+                k: [torch.tensor(f[k]) for f in features]
+                for k in features[0].keys() if k != "task"
             }
             
-            # Determine max length in this batch
+            # Get max length in the batch
             max_length = max(len(ids) for ids in batch["input_ids"])
             
-            # Initialize tensors
-            input_ids = []
-            attention_mask = []
-            labels = []
+            # Pad all tensors to max_length
+            for key in ["input_ids", "attention_mask", "labels"]:
+                batch[key] = [
+                    torch.nn.functional.pad(
+                        tensor, 
+                        (0, max_length - len(tensor)), 
+                        value=0 if key != "labels" else -100
+                    ) 
+                    for tensor in batch[key]
+                ]
             
-            # Pad sequences
-            for i in range(len(features)):
-                # Pad input_ids
-                padding_length = max_length - len(batch["input_ids"][i])
-                input_ids.append(
-                    batch["input_ids"][i] + [self.tokenizer.pad_token_id] * padding_length
-                )
-                attention_mask.append(
-                    batch["attention_mask"][i] + [0] * padding_length
-                )
-                
-                # Pad labels
-                label_padding_length = max_length - len(batch["labels"][i])
-                labels.append(
-                    batch["labels"][i] + [-100] * label_padding_length
-                )
+            # Stack tensors
+            batch = {k: torch.stack(v) for k, v in batch.items()}
             
-            # Convert to tensors
-            batch = {
-                "input_ids": torch.tensor(input_ids),
-                "attention_mask": torch.tensor(attention_mask),
-                "labels": torch.tensor(labels)
-            }
+            # Add task if it exists
+            if "task" in features[0]:
+                batch["task"] = [f["task"] for f in features]
             
             return batch
         
+        # Set up training arguments
+        training_args = self.get_training_args()
+        
+        # Initialize Trainer
         trainer = Trainer(
-            model=self.model,
+            model=model,
             args=training_args,
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
+            tokenizer=self.tokenizer,
             data_collator=custom_data_collator,
-            compute_metrics=self.compute_metrics,
+            compute_metrics=self.compute_metrics
         )
         
+        # Train the model
         trainer.train()
-        trainer.save_model()
-        self.tokenizer.save_pretrained(training_args.output_dir)
         
-        # Save config
-        with open(os.path.join(training_args.output_dir, "config.json"), "w") as f:
-            json.dump(asdict(self.config), f, indent=2)
+        # Save the model
+        model_name = get_config_name(self.config)
+        trainer.save_model(model_name)
         
-        logger.info(f"Training complete. Model saved to {training_args.output_dir}")
+        # Upload model to Hub
+        upload_model_to_hub(model_name, self.config.tasks, self.config.lora_rank if self.config.use_lora else None)
 
 def run_training_configuration(config: TrainingConfig):
     """Run a specific training configuration."""
@@ -660,95 +555,278 @@ Trained using the 🤗 Transformers `Trainer` API.
         logger.error(f"Error uploading model {model_name}: {str(e)}")
 
 def prepare_and_upload_datasets(tasks, force_upload=False):
-    """Prepare and upload datasets for the specified tasks to the Hugging Face Hub."""
-    logger.info(f"Preparing datasets for tasks: {tasks}")
+    """Prepare and upload datasets for all tasks."""
+    logger.info("Preparing datasets for tasks: {}".format(tasks))
     
-    # Create a temporary trainer to handle dataset processing
-    config = TrainingConfig(tasks=tasks)
-    trainer = DissimilarTaskTrainer(config)
-    
-    # Process and combine datasets
-    all_train_datasets = []
-    all_eval_datasets = []
-    
-    # First, process and upload individual datasets
+    # Process each task
     for task in tasks:
-        logger.info(f"Processing dataset for task: {task}")
+        if task == "squad_v2":
+            # Load SQuAD v2 dataset
+            dataset = load_dataset("squad_v2")
+            
+            # Process dataset
+            processed_dataset = process_squad_v2(dataset)
+            
+            # Upload to Hub
+            upload_dataset_to_hub(f"{task}_llama1b", processed_dataset, force_upload)
         
+        elif task == "codex_glue":
+            # Load CodeXGLUE dataset
+            dataset = load_dataset("code_x_glue_ct_code_to_text", "java")
+            
+            # Process dataset
+            processed_dataset = process_codex_glue(dataset)
+            
+            # Upload to Hub
+            upload_dataset_to_hub(f"{task}_llama1b", processed_dataset, force_upload)
+        
+        elif task == "cnn_dailymail":
+            # Load CNN/DailyMail dataset
+            dataset = load_dataset("cnn_dailymail", "3.0.0")
+            
+            # Process dataset
+            processed_dataset = process_cnn_dailymail(dataset)
+            
+            # Upload to Hub
+            upload_dataset_to_hub(f"{task}_llama1b", processed_dataset, force_upload)
+    
+    # Create combined dataset for dissimilar tasks
+    if all(task in tasks for task in ["squad_v2", "codex_glue", "cnn_dailymail"]):
+        create_combined_dataset(tasks, force_upload)
+
+def process_squad_v2(dataset):
+    """Process SQuAD v2 dataset for LLaMA model."""
+    tokenizer = setup_tokenizer("meta-llama/Llama-3.2-1B")
+    
+    def format_squad(example):
+        context = example["context"]
+        question = example["question"]
+        
+        if example["answers"]["text"]:
+            answer = example["answers"]["text"][0]
+        else:
+            answer = "No answer available in the text."
+        
+        input_text = f"Task: squad_v2 | Read the passage and answer. Context: {context} Question: {question}"
+        
+        return {
+            "input_text": input_text,
+            "label": answer,
+            "task": "squad_v2"
+        }
+    
+    # Process train, validation, and test sets
+    train_dataset = dataset["train"].map(format_squad, remove_columns=dataset["train"].column_names)
+    validation_dataset = dataset["validation"].map(format_squad, remove_columns=dataset["validation"].column_names)
+    
+    # Create test set from validation (since SQuAD doesn't have a test split)
+    # Use 50% of validation for test
+    val_size = len(validation_dataset)
+    test_size = val_size // 2
+    
+    # Shuffle validation and split into val and test
+    shuffled_val = validation_dataset.shuffle(seed=42)
+    new_validation = shuffled_val.select(range(val_size - test_size))
+    test_dataset = shuffled_val.select(range(val_size - test_size, val_size))
+    
+    logger.info(f"SQuAD v2: Train size: {len(train_dataset)}, Val size: {len(new_validation)}, Test size: {len(test_dataset)}")
+    
+    # Tokenize datasets
+    def tokenize(examples):
+        inputs = tokenizer(examples["input_text"], padding=False, truncation=True, max_length=512)
+        labels = tokenizer(examples["label"], padding=False, truncation=True, max_length=128)
+        
+        result = {
+            "input_ids": inputs["input_ids"],
+            "attention_mask": inputs["attention_mask"],
+            "labels": labels["input_ids"],
+            "task": examples["task"],
+            "raw_inputs": examples["input_text"],
+            "raw_labels": examples["label"]
+        }
+        return result
+    
+    tokenized_train = train_dataset.map(tokenize, batched=True, remove_columns=train_dataset.column_names)
+    tokenized_validation = new_validation.map(tokenize, batched=True, remove_columns=new_validation.column_names)
+    tokenized_test = test_dataset.map(tokenize, batched=True, remove_columns=test_dataset.column_names)
+    
+    # Combine into a single dataset
+    processed_dataset = DatasetDict({
+        "train": tokenized_train,
+        "validation": tokenized_validation,
+        "test": tokenized_test
+    })
+    
+    return processed_dataset
+
+def process_codex_glue(dataset):
+    """Process CodeXGLUE dataset for LLaMA model."""
+    tokenizer = setup_tokenizer("meta-llama/Llama-3.2-1B")
+    
+    def format_codex(example):
+        code = example["code"]
+        docstring = example["docstring"]
+        
+        input_text = f"Task: codex_glue | Generate documentation for the following code: {code}"
+        
+        return {
+            "input_text": input_text,
+            "label": docstring,
+            "task": "codex_glue"
+        }
+    
+    # Process train, validation, and test sets
+    train_dataset = dataset["train"].map(format_codex, remove_columns=dataset["train"].column_names)
+    validation_dataset = dataset["validation"].map(format_codex, remove_columns=dataset["validation"].column_names)
+    
+    # Create test set from validation if test split doesn't exist
+    if "test" in dataset:
+        test_dataset = dataset["test"].map(format_codex, remove_columns=dataset["test"].column_names)
+    else:
+        # Use 50% of validation for test
+        val_size = len(validation_dataset)
+        test_size = val_size // 2
+        
+        # Shuffle validation and split into val and test
+        shuffled_val = validation_dataset.shuffle(seed=42)
+        validation_dataset = shuffled_val.select(range(val_size - test_size))
+        test_dataset = shuffled_val.select(range(val_size - test_size, val_size))
+    
+    logger.info(f"CodeXGLUE: Train size: {len(train_dataset)}, Val size: {len(validation_dataset)}, Test size: {len(test_dataset)}")
+    
+    # Tokenize datasets
+    def tokenize(examples):
+        inputs = tokenizer(examples["input_text"], padding=False, truncation=True, max_length=512)
+        labels = tokenizer(examples["label"], padding=False, truncation=True, max_length=128)
+        
+        result = {
+            "input_ids": inputs["input_ids"],
+            "attention_mask": inputs["attention_mask"],
+            "labels": labels["input_ids"],
+            "task": examples["task"],
+            "raw_inputs": examples["input_text"],
+            "raw_labels": examples["label"]
+        }
+        return result
+    
+    tokenized_train = train_dataset.map(tokenize, batched=True, remove_columns=train_dataset.column_names)
+    tokenized_validation = validation_dataset.map(tokenize, batched=True, remove_columns=validation_dataset.column_names)
+    tokenized_test = test_dataset.map(tokenize, batched=True, remove_columns=test_dataset.column_names)
+    
+    # Combine into a single dataset
+    processed_dataset = DatasetDict({
+        "train": tokenized_train,
+        "validation": tokenized_validation,
+        "test": tokenized_test
+    })
+    
+    return processed_dataset
+
+def process_cnn_dailymail(dataset):
+    """Process CNN/DailyMail dataset for LLaMA model."""
+    tokenizer = setup_tokenizer("meta-llama/Llama-3.2-1B")
+    
+    def format_cnn(example):
+        article = example["article"]
+        highlights = example["highlights"]
+        
+        input_text = f"Task: cnn_dailymail | Summarize the following article: {article}"
+        
+        return {
+            "input_text": input_text,
+            "label": highlights,
+            "task": "cnn_dailymail"
+        }
+    
+    # Process train, validation, and test sets
+    train_dataset = dataset["train"].map(format_cnn, remove_columns=dataset["train"].column_names)
+    validation_dataset = dataset["validation"].map(format_cnn, remove_columns=dataset["validation"].column_names)
+    test_dataset = dataset["test"].map(format_cnn, remove_columns=dataset["test"].column_names)
+    
+    logger.info(f"CNN/DailyMail: Train size: {len(train_dataset)}, Val size: {len(validation_dataset)}, Test size: {len(test_dataset)}")
+    
+    # Tokenize datasets
+    def tokenize(examples):
+        inputs = tokenizer(examples["input_text"], padding=False, truncation=True, max_length=512)
+        labels = tokenizer(examples["label"], padding=False, truncation=True, max_length=128)
+        
+        result = {
+            "input_ids": inputs["input_ids"],
+            "attention_mask": inputs["attention_mask"],
+            "labels": labels["input_ids"],
+            "task": examples["task"],
+            "raw_inputs": examples["input_text"],
+            "raw_labels": examples["label"]
+        }
+        return result
+    
+    tokenized_train = train_dataset.map(tokenize, batched=True, remove_columns=train_dataset.column_names)
+    tokenized_validation = validation_dataset.map(tokenize, batched=True, remove_columns=validation_dataset.column_names)
+    tokenized_test = test_dataset.map(tokenize, batched=True, remove_columns=test_dataset.column_names)
+    
+    # Combine into a single dataset
+    processed_dataset = DatasetDict({
+        "train": tokenized_train,
+        "validation": tokenized_validation,
+        "test": tokenized_test
+    })
+    
+    return processed_dataset
+
+def create_combined_dataset(tasks, force_upload=False):
+    """Create a combined dataset from individual task datasets."""
+    combined_train_datasets = []
+    combined_val_datasets = []
+    combined_test_datasets = []
+    
+    for task in tasks:
         try:
-            # Load the dataset
-            if task == "codex_glue":
-                dataset = load_dataset("google/code_x_glue_ct_code_to_text", "java")
-            elif task == "cnn_dailymail":
-                dataset = load_dataset("cnn_dailymail", "3.0.0")
-            else:
-                dataset = load_dataset(DATASET_PATHS[task])
+            # Load the individual dataset from Hub
+            dataset_name = f"{HF_USERNAME}/{task}_llama1b"
+            dataset = load_dataset(dataset_name)
             
-            # Process train split with force_process=True to ensure processing
-            train_processed = trainer._process_dataset(
-                dataset["train"], 
-                task, 
-                force_process=True  # Force processing
-            )
-            
-            # Process validation split with force_process=True
-            val_processed = trainer._process_dataset(
-                dataset["validation"], 
-                task, 
-                force_process=True  # Force processing
-            )
-            
-            # Create a DatasetDict for the individual task
-            task_dataset = DatasetDict({
-                "train": train_processed,
-                "validation": val_processed
-            })
-            
-            # Save the individual dataset locally
-            task_dataset_path = os.path.join(DATA_DIR, f"{task}_llama1b_modified")
-            task_dataset.save_to_disk(task_dataset_path)
-            
-            # Upload individual dataset
-            trainer._upload_dataset(f"{task}_llama1b_modified", task_dataset_path)
-            
-            # Add to combined datasets
-            all_train_datasets.append(train_processed)
-            all_eval_datasets.append(val_processed)
-            
-            logger.info(f"Successfully processed and uploaded dataset for task: {task}")
-            
+            # Add train, validation, and test splits
+            combined_train_datasets.append(dataset["train"])
+            combined_val_datasets.append(dataset["validation"])
+            combined_test_datasets.append(dataset["test"])
+            logger.info(f"Loaded {task} dataset from Hub with train, validation, and test splits")
         except Exception as e:
-            logger.error(f"Error processing dataset for task {task}: {str(e)}")
-            raise
+            logger.error(f"Error loading {task} dataset: {str(e)}")
+            return
     
-    # Create multitask dataset if we have more than one task
-    if len(tasks) > 1:
-        logger.info("Creating and uploading multitask dataset...")
-        
-        # Combine datasets
-        combined_train = concatenate_datasets(all_train_datasets)
-        combined_eval = concatenate_datasets(all_eval_datasets)
-        
-        # Create DatasetDict
-        combined_dataset = DatasetDict({
-            "train": combined_train,
-            "validation": combined_eval
-        })
-        
-        # Get the combined dataset name
-        combined_dataset_name = trainer._get_combined_dataset_name()
-        
-        # Save locally
-        combined_dataset_path = os.path.join(DATA_DIR, combined_dataset_name.split("/")[-1])
-        combined_dataset.save_to_disk(combined_dataset_path)
-        
-        # Upload combined dataset
-        trainer._upload_dataset(combined_dataset_name, combined_dataset_path)
-        
-        logger.info(f"Successfully uploaded combined dataset: {combined_dataset_name}")
-        return combined_dataset_name
+    # Combine datasets
+    combined_train = concatenate_datasets(combined_train_datasets)
+    combined_val = concatenate_datasets(combined_val_datasets)
+    combined_test = concatenate_datasets(combined_test_datasets)
     
-    return None
+    # Create a combined dataset with train, validation, and test splits
+    combined_dataset = DatasetDict({
+        "train": combined_train,
+        "validation": combined_val,
+        "test": combined_test
+    })
+    
+    # Upload to Hub
+    combined_name = "_".join(tasks) + "_llama1b_modified"
+    upload_dataset_to_hub(combined_name, combined_dataset, force_upload)
+
+def upload_dataset_to_hub(dataset_name, dataset, force_upload=False):
+    """Upload a dataset to the Hugging Face Hub."""
+    full_name = f"{HF_USERNAME}/{dataset_name}"
+    
+    # Check if dataset already exists
+    if check_dataset_on_hub(full_name) and not force_upload:
+        logger.info(f"Dataset {full_name} already exists on Hub, skipping upload")
+        return
+    
+    logger.info(f"Uploading dataset {full_name} to Hub")
+    
+    try:
+        dataset.push_to_hub(full_name)
+        logger.info(f"Successfully uploaded dataset {full_name} to Hub")
+    except Exception as e:
+        logger.error(f"Error uploading dataset to Hub: {str(e)}")
+        raise
 
 def main():
     """Main function to run training configurations."""
