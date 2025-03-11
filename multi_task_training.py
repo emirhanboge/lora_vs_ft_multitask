@@ -24,6 +24,7 @@ from transformers import (
     DataCollatorForSeq2Seq,
     AutoConfig,
     BitsAndBytesConfig,
+    DataCollatorForLanguageModeling,
 )
 from datasets import load_dataset, concatenate_datasets, DatasetDict, Value, Dataset, Sequence
 from peft import get_peft_model, LoraConfig, TaskType
@@ -76,7 +77,7 @@ if torch.cuda.is_available():
 OUTPUT_DIR = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def get_training_args(output_dir, max_seq_length=2048, config=None):
+def get_training_args(output_dir, max_seq_length=1024, config=None):
     """
     Get training arguments for the trainer.
     
@@ -92,7 +93,6 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
     
     batch_size = config.batch_size
     grad_accum = config.gradient_accumulation_steps
-    
     
     return TrainingArguments(
         output_dir=output_dir,
@@ -114,6 +114,18 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
         save_total_limit=config.save_total_limit,
         push_to_hub=False,
         load_best_model_at_end=True,
+        # Performance optimizations
+        dataloader_num_workers=config.dataloader_num_workers,
+        dataloader_pin_memory=config.dataloader_pin_memory,
+        gradient_checkpointing=config.use_gradient_checkpointing,
+        bf16=config.bf16,
+        fp16=config.fp16,
+        # Memory optimizations
+        ddp_find_unused_parameters=False,
+        # Additional optimizations
+        group_by_length=True,  # Group similar length sequences together
+        length_column_name="length",
+        remove_unused_columns=True,
     )
 
 class BaseTrainer:
@@ -221,7 +233,7 @@ class DissimilarTaskTrainer(BaseTrainer):
             logger.info("CUDA available, clearing GPU cache")
             torch.cuda.empty_cache()
         
-        max_length = 2048
+        max_length = 2048  # Increased for longer sequences
         logger.info(f"Using maximum sequence length of {max_length}")
         
         # Load model configuration
@@ -230,7 +242,7 @@ class DissimilarTaskTrainer(BaseTrainer):
             self.config.base_model,
             torch_dtype=torch.bfloat16 if self.config.bf16 else torch.float16,
             use_cache=False,
-            max_position_embeddings=max_length,  # Set max position embeddings
+            max_position_embeddings=max_length,
         )
         
         logger.info("Loading model weights...")
@@ -297,55 +309,21 @@ class DissimilarTaskTrainer(BaseTrainer):
                 logger.info("Using 0 as pad_token_id since both pad and eos tokens are negative")
                 self.tokenizer.pad_token_id = 0
         
-        # Maximum sequence length
-        max_seq_length = 2048
-        logger.info(f"Using maximum sequence length of {max_seq_length} tokens")
-        
-        # Create a robust data collator
+        # Set up data collator with proper padding
         logger.info("Setting up data collator...")
-        def safe_data_collator(features):
-            """Safe data collator that handles sequences carefully."""
-            batch_size = len(features)
-            if batch_size > 10:
-                logger.debug(f"Processing batch of {batch_size} examples")
-            
-            # All sequences should already be padded to the same length from preprocessing
-            # Just need to convert to tensors and validate
-            try:
-                batch = {
-                    "input_ids": torch.tensor([f["input_ids"] for f in features], dtype=torch.long),
-                    "attention_mask": torch.tensor([f["attention_mask"] for f in features], dtype=torch.long),
-                    "labels": torch.tensor([f["labels"] for f in features], dtype=torch.long),
-                }
-                
-                # Final validation
-                for key, tensor in batch.items():
-                    if tensor.dim() != 2:
-                        logger.warning(f"{key} should be a 2D tensor, got {tensor.dim()}D")
-                    if tensor.size(0) != batch_size:
-                        logger.warning(f"{key} batch dimension mismatch: {tensor.size(0)} != {batch_size}")
-                    if tensor.dtype != torch.long:
-                        logger.warning(f"{key} should be torch.long, got {tensor.dtype}")
-                
-                return batch
-                
-            except Exception as e:
-                logger.error(f"Failed to create tensor batch: {str(e)}")
-                raise
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=self.tokenizer,
+            mlm=False,
+            return_tensors="pt",
+        )
         
         # Set up training arguments
         logger.info("Configuring training arguments...")
         training_args = get_training_args(
             os.path.join(OUTPUT_DIR, get_config_name(self.config)), 
-            max_seq_length,
-            self.config
+            max_seq_length=2048,  # Increased for generation tasks
+            config=self.config
         )
-        
-        # Update batch size if needed
-        if self.config.batch_size > 4 and not self.config.use_lora:
-            logger.warning(f"Reducing batch size from {self.config.batch_size} to 4 for stability")
-            training_args.per_device_train_batch_size = 4
-            training_args.per_device_eval_batch_size = 4
         
         # Set up trainer
         logger.info("Initializing Trainer...")
@@ -355,7 +333,7 @@ class DissimilarTaskTrainer(BaseTrainer):
             train_dataset=self.train_dataset,
             eval_dataset=self.eval_dataset,
             compute_metrics=self.compute_metrics,
-            data_collator=safe_data_collator,
+            data_collator=data_collator,
             tokenizer=self.tokenizer,
         )
         

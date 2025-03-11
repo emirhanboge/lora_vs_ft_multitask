@@ -438,7 +438,7 @@ def load_and_preprocess_dissimilar_tasks(tasks: List[str], tokenizer: AutoTokeni
         eval_dataset = concatenate_datasets(eval_samples)
         
         # Ensure all sequences have consistent lengths
-        max_length = 2048  # Maximum length for generation tasks
+        max_length = 1024  # Maximum length for generation tasks
         
         def ensure_length_consistency(example):
             # Truncate or pad input_ids and attention_mask
