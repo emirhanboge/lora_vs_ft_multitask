@@ -71,6 +71,9 @@ MODEL_PATHS = {
 SIMILAR_TASKS = ["sst2", "mnli", "qqp"]
 DISSIMILAR_TASKS = ["squad_v2", "cnn_dailymail", "codex_glue"]
 
+# Number of examples to use per task for training dissimilar tasks
+EXAMPLES_PER_TASK = 25000
+
 # Task labels
 TASK_LABELS = {
     "sst2": 2,  # Binary: negative (0), positive (1)
@@ -85,14 +88,11 @@ METRIC_MAPPING = {
     "qqp": ["accuracy", "f1"],
 }
 
-# Maximum sequence lengths
+# Maximum sequence lengths for similar tasks
 MAX_LENGTHS = {
     "sst2": 128,
     "mnli": 128,
     "qqp": 128,
-    "squad_v2": 512,
-    "cnn_dailymail": 2048,
-    "codex_glue": 1024,
 }
 
 # Results and evaluation

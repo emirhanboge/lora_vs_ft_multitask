@@ -15,33 +15,46 @@ class TrainingConfig:
     """Configuration for training runs."""
     # Task type
     task_type: TaskType = "similar"
+    tasks: List[str] = None  # List of tasks to train on
     
     # Model configuration
-    model_name: str = "meta-llama/Llama-3.2-1B"  # Base LLaMA model to use
+    base_model: str = "meta-llama/Llama-3.2-1B"  # Base LLaMA model to use
     use_lora: bool = True
     lora_rank: int = 16
     lora_alpha: Optional[int] = None  # If None, will be set to lora_rank * 2
     lora_dropout: float = 0.1
-    target_modules: List[str] = None  # If None, will use default ["q_proj", "v_proj"]
     
     # Training parameters
     batch_size: int = 32
-    num_epochs: int = 3
+    epochs: int = 3
     learning_rate: float = 1e-5
     weight_decay: float = 0.01
     warmup_ratio: float = 0.1
     gradient_accumulation_steps: int = 4
     
+    # Evaluation parameters
+    eval_steps: int = 500
+    metric_for_best_model: str = "loss"
+    greater_is_better: bool = False
+    
     # Saving and logging
     save_total_limit: int = 10
     logging_steps: int = 10
-    save_steps: int = 500 if "similar" in model_name else 1500
+    save_steps: int = 500
+    fp16: bool = False
+    bf16: bool = True
+    max_grad_norm: float = 1.0
     
     def __post_init__(self):
         if self.lora_alpha is None:
             self.lora_alpha = self.lora_rank * 2
-        if self.target_modules is None:
-            self.target_modules = ["q_proj", "v_proj"]
+        
+        # Set default tasks based on task_type if not provided
+        if self.tasks is None:
+            if self.task_type == "similar":
+                self.tasks = ["sst2", "mnli", "qqp"]
+            else:
+                self.tasks = ["squad_v2", "codex_glue", "cnn_dailymail"]
         
         # Adjust batch size based on task type
         if self.task_type == "similar" and not self.use_lora:
@@ -56,10 +69,11 @@ SIMILAR_TASK_CONFIGS = [
     # Full fine-tuning baseline
     TrainingConfig(
         task_type="similar",
-        model_name=SIMILAR_BASE_MODEL,
+        tasks=["sst2", "mnli", "qqp"],
+        base_model=SIMILAR_BASE_MODEL,
         use_lora=False,
         batch_size=128,
-        num_epochs=3,
+        epochs=3,
         learning_rate=1e-5,
         weight_decay=0,
         gradient_accumulation_steps=4,
@@ -68,43 +82,48 @@ SIMILAR_TASK_CONFIGS = [
     # LoRA configurations
     TrainingConfig(
         task_type="similar",
-        model_name=SIMILAR_BASE_MODEL,
+        tasks=["sst2", "mnli", "qqp"],
+        base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=4,
         batch_size=32,
-        num_epochs=3,
+        epochs=3,
     ),
     TrainingConfig(
         task_type="similar",
-        model_name=SIMILAR_BASE_MODEL,
+        tasks=["sst2", "mnli", "qqp"],
+        base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=8,
         batch_size=32,
-        num_epochs=3,
+        epochs=3,
     ),
     TrainingConfig(
         task_type="similar",
-        model_name=SIMILAR_BASE_MODEL,
+        tasks=["sst2", "mnli", "qqp"],
+        base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=16,  # Original baseline
         batch_size=32,
-        num_epochs=3,
+        epochs=3,
     ),
     TrainingConfig(
         task_type="similar",
-        model_name=SIMILAR_BASE_MODEL,
+        tasks=["sst2", "mnli", "qqp"],
+        base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=32,
         batch_size=32,
-        num_epochs=3,
+        epochs=3,
     ),
     TrainingConfig(
         task_type="similar",
-        model_name=SIMILAR_BASE_MODEL,
+        tasks=["sst2", "mnli", "qqp"],
+        base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=64,
         batch_size=32,
-        num_epochs=3,
+        epochs=3,
     ),
 ]
 
@@ -112,10 +131,11 @@ DISSIMILAR_TASK_CONFIGS = [
     # Full fine-tuning baseline
     TrainingConfig(
         task_type="dissimilar",
-        model_name=DISSIMILAR_BASE_MODEL,
+        tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
+        base_model=DISSIMILAR_BASE_MODEL,
         use_lora=False,
-        batch_size=32,
-        num_epochs=3,
+        batch_size=16,
+        epochs=3,
         learning_rate=1e-5,
         weight_decay=0,
         gradient_accumulation_steps=4,
@@ -124,43 +144,49 @@ DISSIMILAR_TASK_CONFIGS = [
     # LoRA configurations
     TrainingConfig(
         task_type="dissimilar",
-        model_name=DISSIMILAR_BASE_MODEL,
+        tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
+        base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=4,
-        batch_size=32,
-        num_epochs=3,
+        batch_size=2,
+        gradient_accumulation_steps=16,  # Increased from 4 to 16 for effective batch size of 32
+        epochs=3,
     ),
     TrainingConfig(
         task_type="dissimilar",
-        model_name=DISSIMILAR_BASE_MODEL,
+        tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
+        base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=8,
-        batch_size=32,
-        num_epochs=3,
+        batch_size=16,
+        epochs=3,
     ),
     TrainingConfig(
         task_type="dissimilar",
-        model_name=DISSIMILAR_BASE_MODEL,
+        tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
+        base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=16,  # Original baseline
-        batch_size=32,
-        num_epochs=3,
+        batch_size=16,
+        epochs=3,
     ),
     TrainingConfig(
         task_type="dissimilar",
-        model_name=DISSIMILAR_BASE_MODEL,
+        tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
+        base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=32,
-        batch_size=32,
-        num_epochs=3,
+        batch_size=16,
+        epochs=3,
     ),
     TrainingConfig(
         task_type="dissimilar",
-        model_name=DISSIMILAR_BASE_MODEL,
+        tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
+        base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=64,
-        batch_size=32,
-        num_epochs=3,
+        batch_size=16,
+        epochs=3,
     ),
 ]
 

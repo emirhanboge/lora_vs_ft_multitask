@@ -1,0 +1,32 @@
+[
+  {
+    "model_name": "outputs/dissimilar_LoRA_4",
+    "task": "squad_v2",
+    "rouge1": 1.0,
+    "rouge2": 0.7010796221322537,
+    "rougeL": 1.0,
+    "bleu": 1.0,
+    "exact_match": 1.0,
+    "f1": 1.0
+  },
+  {
+    "model_name": "outputs/dissimilar_LoRA_4",
+    "task": "cnn_dailymail",
+    "rouge1": 0.013359722190811957,
+    "rouge2": 7.094284341050744e-05,
+    "rougeL": 0.01276416073916584,
+    "bleu": 0.0,
+    "exact_match": null,
+    "f1": null
+  },
+  {
+    "model_name": "outputs/dissimilar_LoRA_4",
+    "task": "codex_glue",
+    "rouge1": 0.004612320673412138,
+    "rouge2": 2.501870559401093e-05,
+    "rougeL": 0.004565573877949737,
+    "bleu": 8.702470844186952e-08,
+    "exact_match": null,
+    "f1": null
+  }
+]
