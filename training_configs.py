@@ -30,7 +30,6 @@ class TrainingConfig:
     learning_rate: float = 1e-5
     weight_decay: float = 0.01
     warmup_ratio: float = 0.1
-    gradient_accumulation_steps: int = 4
     
     # Performance optimization
     dataloader_num_workers: int = 4
@@ -46,7 +45,7 @@ class TrainingConfig:
     # Saving and logging
     save_total_limit: int = 10
     logging_steps: int = 100  # Increased from 10 to reduce overhead
-    save_steps: int = 300 if task_type == "dissimilar" else 500
+    save_steps: int = 5600 if task_type == "dissimilar" else 500
     fp16: bool = False
     bf16: bool = True
     
@@ -60,15 +59,6 @@ class TrainingConfig:
                 self.tasks = ["sst2", "mnli", "qqp"]
             else:
                 self.tasks = ["squad_v2", "codex_glue", "cnn_dailymail"]
-        
-        # Only adjust batch size and gradient accumulation for full fine-tuning
-        if not self.use_lora:
-            if self.task_type == "similar":
-                self.batch_size = 64  # Reduced from 128 for better stability
-                self.gradient_accumulation_steps = 8  # Increased for larger effective batch size
-            else:  # dissimilar tasks
-                self.batch_size = 4
-                self.gradient_accumulation_steps = 32  # Increased for larger effective batch size
 
 # Base models for each task type
 SIMILAR_BASE_MODEL = "meta-llama/Llama-3.2-1B"  # Base LLaMA model for all training
@@ -86,7 +76,6 @@ SIMILAR_TASK_CONFIGS = [
         epochs=3,
         learning_rate=1e-5,
         weight_decay=0,
-        gradient_accumulation_steps=4,
     ),
     
     # LoRA configurations
@@ -145,7 +134,6 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=False,
         batch_size=2,  # Small batch size for longer sequences
-        gradient_accumulation_steps=32,  # Large accumulation for effective batch size of 64
         epochs=3,
     ),
     
@@ -156,8 +144,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=4,
-        batch_size=8,
-        gradient_accumulation_steps=32,  # Effective batch size = 8 * 32 = 256
+        batch_size=4,
         epochs=3,
     ),
     TrainingConfig(
@@ -167,7 +154,6 @@ DISSIMILAR_TASK_CONFIGS = [
         use_lora=True,
         lora_rank=8,
         batch_size=8,
-        gradient_accumulation_steps=32,
         epochs=3,
     ),
     TrainingConfig(
@@ -177,7 +163,6 @@ DISSIMILAR_TASK_CONFIGS = [
         use_lora=True,
         lora_rank=16,
         batch_size=8,
-        gradient_accumulation_steps=32,
         epochs=3,
     ),
     TrainingConfig(
@@ -187,7 +172,6 @@ DISSIMILAR_TASK_CONFIGS = [
         use_lora=True,
         lora_rank=32,
         batch_size=8,
-        gradient_accumulation_steps=32,
         epochs=3,
     ),
     TrainingConfig(
@@ -197,7 +181,6 @@ DISSIMILAR_TASK_CONFIGS = [
         use_lora=True,
         lora_rank=64,
         batch_size=8,
-        gradient_accumulation_steps=32,
         epochs=3,
     ),
 ]

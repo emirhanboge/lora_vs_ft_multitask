@@ -1,5 +1,5 @@
 """
-Global configuration variables for TreeMark.
+Global configuration variables
 
 This module contains all global constants, paths, and mappings used across the project.
 """

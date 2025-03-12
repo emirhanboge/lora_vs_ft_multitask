@@ -77,7 +77,7 @@ if torch.cuda.is_available():
 OUTPUT_DIR = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def get_training_args(output_dir, max_seq_length=1024, config=None):
+def get_training_args(output_dir, max_seq_length=2048, config=None):
     """
     Get training arguments for the trainer.
     
@@ -92,11 +92,11 @@ def get_training_args(output_dir, max_seq_length=1024, config=None):
     logger.info(f"Setting up training arguments with max sequence length of {max_seq_length}")
     
     batch_size = config.batch_size
-    grad_accum = config.gradient_accumulation_steps
     
     return TrainingArguments(
         output_dir=output_dir,
-        evaluation_strategy="steps",
+        num_train_epochs=config.epochs,
+        eval_strategy="no",
         save_strategy="steps",
         logging_strategy="steps",
         learning_rate=config.learning_rate,
@@ -105,7 +105,6 @@ def get_training_args(output_dir, max_seq_length=1024, config=None):
         warmup_ratio=config.warmup_ratio,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        gradient_accumulation_steps=grad_accum,
         eval_steps=config.eval_steps,
         save_steps=config.save_steps,
         logging_steps=config.logging_steps,
@@ -113,7 +112,7 @@ def get_training_args(output_dir, max_seq_length=1024, config=None):
         report_to="none",
         save_total_limit=config.save_total_limit,
         push_to_hub=False,
-        load_best_model_at_end=True,
+        disable_tqdm=False,  # Enable progress bars
         # Performance optimizations
         dataloader_num_workers=config.dataloader_num_workers,
         dataloader_pin_memory=config.dataloader_pin_memory,
@@ -204,7 +203,7 @@ class SimilarTaskTrainer(BaseTrainer):
             model=self.model,
             args=training_args,
             train_dataset=self.train_dataset,
-            eval_dataset=self.eval_dataset,
+            # eval_dataset=self.eval_dataset, # no evaluation in training
             compute_metrics=self.compute_metrics,
         )
         
@@ -325,7 +324,6 @@ class DissimilarTaskTrainer(BaseTrainer):
             config=self.config
         )
         
-        # Set up trainer
         logger.info("Initializing Trainer...")
         trainer = Trainer(
             model=model,
