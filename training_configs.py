@@ -137,7 +137,7 @@ DISSIMILAR_TASK_CONFIGS = [
         tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=False,
-        batch_size=2,  # Small batch size for longer sequences
+        batch_size=4,  # Small batch size for longer sequences
         epochs=3,
     ),
     
@@ -157,7 +157,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=8,
-        batch_size=8,
+        batch_size=4,
         epochs=3,
     ),
     TrainingConfig(
@@ -166,7 +166,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=16,
-        batch_size=8,
+        batch_size=4,
         epochs=3,
     ),
     TrainingConfig(
@@ -175,7 +175,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=32,
-        batch_size=8,
+        batch_size=4,
         epochs=3,
     ),
     TrainingConfig(
@@ -184,7 +184,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=64,
-        batch_size=8,
+        batch_size=4,
         epochs=3,
     ),
 ]
