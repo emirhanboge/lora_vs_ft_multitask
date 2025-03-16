@@ -105,13 +105,13 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
         learning_rate=config.learning_rate,
         weight_decay=config.weight_decay,
         max_grad_norm=config.max_grad_norm,
-        # warmup_ratio=config.warmup_ratio,
+        warmup_ratio=config.warmup_ratio,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         save_steps=config.save_steps,  # This will use 5600 for dissimilar tasks as defined in config
         logging_steps=config.logging_steps,
         optim="adamw_torch",
-        lr_scheduler_type="constant",
+        lr_scheduler_type="cosine",
         report_to="none",
         save_total_limit=config.save_total_limit,
         push_to_hub=False,
@@ -345,9 +345,9 @@ class DissimilarTaskTrainer(BaseTrainer):
         
         # Save the model
         model_name = get_config_name(self.config)
-        logger.info(f"Saving model to {model_name}")
-        trainer.save_model(model_name)
-        logger.info(f"Model saved successfully to {model_name}")
+        logger.info(f"Saving model to {OUTPUT_DIR}/{model_name}")
+        trainer.save_model(OUTPUT_DIR + "/" + model_name)
+        logger.info(f"Model saved successfully to {OUTPUT_DIR}/{model_name}")
 
 def model_already_trained(model_name):
     """Check if a model has already been trained."""

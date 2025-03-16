@@ -76,10 +76,8 @@ SIMILAR_TASK_CONFIGS = [
         tasks=["sst2", "mnli", "qqp"],
         base_model=SIMILAR_BASE_MODEL,
         use_lora=False,
-        batch_size=128,
+        batch_size=32,
         epochs=3,
-        learning_rate=1e-5,
-        weight_decay=0,
     ),
     
     # LoRA configurations
