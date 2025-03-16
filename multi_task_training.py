@@ -92,6 +92,9 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
     logger.info(f"Setting up training arguments with max sequence length of {max_seq_length}")
     
     batch_size = config.batch_size
+
+    logger.info(f"Task type: {config.task_type}")
+    logger.info(f"Save steps: {config.save_steps}")
     
     return TrainingArguments(
         output_dir=output_dir,
@@ -105,8 +108,7 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
         warmup_ratio=config.warmup_ratio,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        eval_steps=config.eval_steps,
-        save_steps=config.save_steps,
+        save_steps=config.save_steps,  # This will use 5600 for dissimilar tasks as defined in config
         logging_steps=config.logging_steps,
         optim="adamw_torch",
         report_to="none",
