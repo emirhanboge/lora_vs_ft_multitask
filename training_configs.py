@@ -43,7 +43,7 @@ class TrainingConfig:
     greater_is_better: bool = False
     
     # Saving and logging
-    save_total_limit: int = 10
+    save_total_limit: int = 11 # 10 + 1 for the last model
     logging_steps: int = 100  # Increased from 10 to reduce overhead
     save_steps: int = None  # Will be set in post_init based on task_type
     fp16: bool = False
