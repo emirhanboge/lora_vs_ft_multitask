@@ -42,10 +42,9 @@ DATASET_PATHS = {
     "sst2_mnli_qqp": "emirhanboge/sst2_mnli_qqp_llama1b_modified",
     
     # Dissimilar tasks (Generation)
-    "squad_v2": "emirhanboge/rajpurkar_squad_v2_llama1b_modified",
-    "cnn_dailymail": "emirhanboge/cnn_dailymail_llama1b_modified",
-    "codex_glue": "emirhanboge/codex_glue_llama1b_modified",
-    "qa_code_summarization": "emirhanboge/qa_code_summarization_llama1b_modified",
+    "squad_v2": "emirhanboge/squad_v2_llama1b",
+    "cnn_dailymail": "emirhanboge/cnn_dailymail_llama1b",
+    "codex_glue": "emirhanboge/codex_glue_llama1b",
 }
 
 # Model paths

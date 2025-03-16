@@ -164,7 +164,7 @@ class DissimilarTaskEvaluator:
                 last_non_pad_pos = 0
             
             # Truncate input to remove padding at the end and limit context length
-            max_context_length = 512  # Limit context to avoid OOM
+            max_context_length = 2048 
             start_pos = max(0, last_non_pad_pos + 1 - max_context_length)
             truncated_input = input_ids[:, start_pos:last_non_pad_pos+1]
             truncated_attention = attention_mask[:, start_pos:last_non_pad_pos+1]
@@ -178,7 +178,7 @@ class DissimilarTaskEvaluator:
                     outputs = model.generate(
                         input_ids=truncated_input,
                         attention_mask=truncated_attention,
-                        max_new_tokens=64,
+                        max_new_tokens=64, 
                         do_sample=True,
                         temperature=1.0,
                         top_p=0.95,
