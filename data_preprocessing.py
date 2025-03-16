@@ -407,38 +407,42 @@ def load_and_preprocess_dissimilar_tasks(tasks: List[str], tokenizer: AutoTokeni
         train_dataset = dataset["train"]
         eval_dataset = dataset["validation"]
         
-        # Filter for dissimilar tasks
-        train_dataset = train_dataset.filter(lambda x: x["task"] in tasks)
-        eval_dataset = eval_dataset.filter(lambda x: x["task"] in tasks)
+        # Create task filter
+        task_filter = lambda x: x["task"] in tasks
         
-        # Sample exactly 25000 examples per task
-        train_samples = []
-        eval_samples = []
-        
+        # Filter and sample in one pass for training data
+        logger.info("Processing training data...")
+        train_indices = {}
         for task in tasks:
-            # Sample training data
-            task_data = train_dataset.filter(lambda x: x["task"] == task)
-            if len(task_data) > 25000:
+            task_mask = [x["task"] == task for x in train_dataset]
+            task_indices = [i for i, is_task in enumerate(task_mask) if is_task]
+            if len(task_indices) > 25000:
                 random.seed(42)  # Set seed for reproducibility
-                train_indices = random.sample(range(len(task_data)), 25000)
-                task_data = task_data.select(train_indices)
-            train_samples.append(task_data)
-            
-            # Sample validation data - 10% of training size
-            task_eval_data = eval_dataset.filter(lambda x: x["task"] == task)
-            val_sample_size = 2500  # 10% of training size
-            if len(task_eval_data) > val_sample_size:
-                random.seed(123)  # Different seed for validation
-                val_indices = random.sample(range(len(task_eval_data)), val_sample_size)
-                task_eval_data = task_eval_data.select(val_indices)
-            eval_samples.append(task_eval_data)
+                task_indices = random.sample(task_indices, 25000)
+            train_indices[task] = task_indices
         
-        # Combine datasets
-        train_dataset = concatenate_datasets(train_samples)
-        eval_dataset = concatenate_datasets(eval_samples)
+        # Combine all indices and select data
+        all_train_indices = [idx for indices in train_indices.values() for idx in indices]
+        train_dataset = train_dataset.select(all_train_indices)
+        
+        # Process validation data similarly but with 10% size
+        logger.info("Processing validation data...")
+        eval_indices = {}
+        for task in tasks:
+            task_mask = [x["task"] == task for x in eval_dataset]
+            task_indices = [i for i, is_task in enumerate(task_mask) if is_task]
+            val_sample_size = 2500  # 10% of training size
+            if len(task_indices) > val_sample_size:
+                random.seed(123)  # Different seed for validation
+                task_indices = random.sample(task_indices, val_sample_size)
+            eval_indices[task] = task_indices
+        
+        # Combine all validation indices and select data
+        all_eval_indices = [idx for indices in eval_indices.values() for idx in indices]
+        eval_dataset = eval_dataset.select(all_eval_indices)
         
         # Ensure all sequences have consistent lengths
-        max_length = 1024  # Maximum length for generation tasks
+        max_length = 2048 # Maximum length for generation tasks
         
         def ensure_length_consistency(example):
             # Truncate or pad input_ids and attention_mask
@@ -459,8 +463,22 @@ def load_and_preprocess_dissimilar_tasks(tasks: List[str], tokenizer: AutoTokeni
                 'task': example['task']
             }
         
-        train_dataset = train_dataset.map(ensure_length_consistency)
-        eval_dataset = eval_dataset.map(ensure_length_consistency)
+        # Use batched processing for faster length consistency
+        train_dataset = train_dataset.map(
+            ensure_length_consistency,
+            num_proc=4,  # Use multiple processes
+            batched=True,
+            batch_size=1000,  # Process in larger batches
+            desc="Processing training data"
+        )
+        
+        eval_dataset = eval_dataset.map(
+            ensure_length_consistency,
+            num_proc=4,  # Use multiple processes
+            batched=True,
+            batch_size=1000,  # Process in larger batches
+            desc="Processing validation data"
+        )
         
         logger.info(f"Final dataset sizes - Train: {len(train_dataset)}, Validation: {len(eval_dataset)}")
         return train_dataset, eval_dataset
