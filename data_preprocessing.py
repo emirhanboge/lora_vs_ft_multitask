@@ -410,74 +410,109 @@ def load_and_preprocess_dissimilar_tasks(tasks: List[str], tokenizer: AutoTokeni
         # Create task filter
         task_filter = lambda x: x["task"] in tasks
         
-        # Filter and sample in one pass for training data
+        # Sample exactly 25000 examples per task
+        train_samples = []
+        eval_samples = []
+        
+        from tqdm.auto import tqdm
+        
+        # Process training data with progress bar
         logger.info("Processing training data...")
-        train_indices = {}
-        for task in tasks:
-            task_mask = [x["task"] == task for x in train_dataset]
-            task_indices = [i for i, is_task in enumerate(task_mask) if is_task]
-            if len(task_indices) > 25000:
+        for task in tqdm(tasks, desc="Processing tasks (train)", position=0):
+            # Sample training data
+            logger.info(f"Filtering task {task} from {len(train_dataset)} examples")
+            task_data = train_dataset.filter(
+                lambda x: x["task"] == task,
+                desc=f"Filtering {task} (train)",
+                num_proc=4
+            )
+            logger.info(f"Found {len(task_data)} examples for task {task}")
+            
+            if len(task_data) > 25000:
+                logger.info(f"Sampling 25000 examples from {len(task_data)} for task {task}")
                 random.seed(42)  # Set seed for reproducibility
-                task_indices = random.sample(task_indices, 25000)
-            train_indices[task] = task_indices
+                train_indices = random.sample(range(len(task_data)), 25000)
+                task_data = task_data.select(train_indices)
+            train_samples.append(task_data)
+            logger.info(f"Final training sample size for {task}: {len(task_data)}")
         
-        # Combine all indices and select data
-        all_train_indices = [idx for indices in train_indices.values() for idx in indices]
-        train_dataset = train_dataset.select(all_train_indices)
-        
-        # Process validation data similarly but with 10% size
+        # Process validation data with progress bar
         logger.info("Processing validation data...")
-        eval_indices = {}
-        for task in tasks:
-            task_mask = [x["task"] == task for x in eval_dataset]
-            task_indices = [i for i, is_task in enumerate(task_mask) if is_task]
+        for task in tqdm(tasks, desc="Processing tasks (val)", position=0):
+            # Sample validation data - 10% of training size
+            logger.info(f"Filtering task {task} from {len(eval_dataset)} examples")
+            task_eval_data = eval_dataset.filter(
+                lambda x: x["task"] == task,
+                desc=f"Filtering {task} (val)",
+                num_proc=4
+            )
+            logger.info(f"Found {len(task_eval_data)} examples for task {task}")
+            
             val_sample_size = 2500  # 10% of training size
-            if len(task_indices) > val_sample_size:
+            if len(task_eval_data) > val_sample_size:
+                logger.info(f"Sampling {val_sample_size} examples from {len(task_eval_data)} for task {task}")
                 random.seed(123)  # Different seed for validation
-                task_indices = random.sample(task_indices, val_sample_size)
-            eval_indices[task] = task_indices
+                val_indices = random.sample(range(len(task_eval_data)), val_sample_size)
+                task_eval_data = task_eval_data.select(val_indices)
+            eval_samples.append(task_eval_data)
+            logger.info(f"Final validation sample size for {task}: {len(task_eval_data)}")
         
-        # Combine all validation indices and select data
-        all_eval_indices = [idx for indices in eval_indices.values() for idx in indices]
-        eval_dataset = eval_dataset.select(all_eval_indices)
+        # Combine datasets with progress bar
+        logger.info("Combining datasets...")
+        train_dataset = concatenate_datasets(train_samples)
+        eval_dataset = concatenate_datasets(eval_samples)
         
         # Ensure all sequences have consistent lengths
-        max_length = 2048 # Maximum length for generation tasks
+        max_length = 2048  # Maximum length for generation tasks
         
-        def ensure_length_consistency(example):
-            # Truncate or pad input_ids and attention_mask
-            input_ids = example['input_ids'][:max_length]
-            attention_mask = example['attention_mask'][:max_length]
-            labels = example['labels'][:max_length]
+        def ensure_length_consistency(examples):
+            """Process a batch of examples for length consistency."""
+            input_ids_list = []
+            attention_mask_list = []
+            labels_list = []
             
-            # Pad if necessary
-            if len(input_ids) < max_length:
-                input_ids = input_ids + [tokenizer.pad_token_id] * (max_length - len(input_ids))
-                attention_mask = attention_mask + [0] * (max_length - len(attention_mask))
-                labels = labels + [-100] * (max_length - len(labels))  # Use -100 for padding in labels
+            for i in range(len(examples['input_ids'])):
+                # Truncate or pad input_ids and attention_mask
+                input_ids = examples['input_ids'][i][:max_length]
+                attention_mask = examples['attention_mask'][i][:max_length]
+                labels = examples['labels'][i][:max_length]
+                
+                # Pad if necessary
+                if len(input_ids) < max_length:
+                    input_ids = input_ids + [tokenizer.pad_token_id] * (max_length - len(input_ids))
+                    attention_mask = attention_mask + [0] * (max_length - len(attention_mask))
+                    labels = labels + [-100] * (max_length - len(labels))
+                
+                input_ids_list.append(input_ids)
+                attention_mask_list.append(attention_mask)
+                labels_list.append(labels)
             
             return {
-                'input_ids': input_ids,
-                'attention_mask': attention_mask,
-                'labels': labels,
-                'task': example['task']
+                'input_ids': input_ids_list,
+                'attention_mask': attention_mask_list,
+                'labels': labels_list,
+                'task': examples['task']
             }
         
-        # Use batched processing for faster length consistency
+        # Process datasets with progress bars
+        logger.info("Processing training dataset for length consistency...")
         train_dataset = train_dataset.map(
             ensure_length_consistency,
-            num_proc=4,  # Use multiple processes
             batched=True,
-            batch_size=1000,  # Process in larger batches
-            desc="Processing training data"
+            batch_size=100,
+            num_proc=4,
+            desc="Processing training examples",
+            remove_columns=train_dataset.column_names
         )
         
+        logger.info("Processing validation dataset for length consistency...")
         eval_dataset = eval_dataset.map(
             ensure_length_consistency,
-            num_proc=4,  # Use multiple processes
             batched=True,
-            batch_size=1000,  # Process in larger batches
-            desc="Processing validation data"
+            batch_size=100,
+            num_proc=4,
+            desc="Processing validation examples",
+            remove_columns=eval_dataset.column_names
         )
         
         logger.info(f"Final dataset sizes - Train: {len(train_dataset)}, Validation: {len(eval_dataset)}")
