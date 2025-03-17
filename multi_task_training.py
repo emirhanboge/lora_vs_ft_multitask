@@ -102,7 +102,7 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
         eval_strategy="no",
         save_strategy="steps",
         logging_strategy="steps",
-        learning_rate=config.learning_rate,
+        learning_rate=1e-5 if config.task_type == "similar" else 1e-4,
         weight_decay=config.weight_decay,
         max_grad_norm=config.max_grad_norm,
         warmup_ratio=config.warmup_ratio,
