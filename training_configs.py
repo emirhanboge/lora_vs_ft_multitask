@@ -27,7 +27,7 @@ class TrainingConfig:
     # Training parameters
     batch_size: int = 32
     epochs: int = 3
-    learning_rate: float = 1e-5
+    learning_rate: float = 1e-5 if task_type == "similar" else 1e-4
     weight_decay: float = 0.01
     warmup_ratio: float = 0.1
     

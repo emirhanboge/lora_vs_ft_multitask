@@ -111,7 +111,6 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
         save_steps=config.save_steps,  # This will use 5600 for dissimilar tasks as defined in config
         logging_steps=config.logging_steps,
         optim="adamw_torch",
-        lr_scheduler_type="cosine",
         report_to="none",
         save_total_limit=config.save_total_limit,
         push_to_hub=False,
