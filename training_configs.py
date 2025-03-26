@@ -76,7 +76,7 @@ SIMILAR_TASK_CONFIGS = [
         tasks=["sst2", "mnli", "qqp"],
         base_model=SIMILAR_BASE_MODEL,
         use_lora=False,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     
@@ -87,7 +87,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=4,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     TrainingConfig(
@@ -96,7 +96,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=8,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     TrainingConfig(
@@ -105,7 +105,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=16,  # Original baseline
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     TrainingConfig(
@@ -114,7 +114,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=32,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     TrainingConfig(
@@ -123,7 +123,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=64,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
 ]

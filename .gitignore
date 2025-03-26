@@ -26,6 +26,11 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+nohup.out
+
+performance_analysis/
+drift_analysis_plots/
+
 data/
 logs/
 models/

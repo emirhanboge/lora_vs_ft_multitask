@@ -1,4 +1,0 @@
-model_name,task,rouge1,rouge2,rougeL,bleu,exact_match,f1
-outputs/dissimilar_LoRA_4,cnn_dailymail,1.0,1.0,1.0,1.0,,
-outputs/dissimilar_LoRA_4,codex_glue,1.0,1.0,1.0,1.0,,
-outputs/dissimilar_LoRA_4,squad_v2,1.0,0.6,1.0,1.0,1.0,1.0
