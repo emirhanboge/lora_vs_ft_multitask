@@ -92,6 +92,9 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
     logger.info(f"Setting up training arguments with max sequence length of {max_seq_length}")
     
     batch_size = config.batch_size
+
+    logger.info(f"Task type: {config.task_type}")
+    logger.info(f"Save steps: {config.save_steps}")
     
     return TrainingArguments(
         output_dir=output_dir,
@@ -99,14 +102,13 @@ def get_training_args(output_dir, max_seq_length=2048, config=None):
         eval_strategy="no",
         save_strategy="steps",
         logging_strategy="steps",
-        learning_rate=config.learning_rate,
+        learning_rate=1e-5 if config.task_type == "similar" else 1e-4,
         weight_decay=config.weight_decay,
         max_grad_norm=config.max_grad_norm,
         warmup_ratio=config.warmup_ratio,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        eval_steps=config.eval_steps,
-        save_steps=config.save_steps,
+        save_steps=config.save_steps,  # This will use 5600 for dissimilar tasks as defined in config
         logging_steps=config.logging_steps,
         optim="adamw_torch",
         report_to="none",
@@ -342,9 +344,9 @@ class DissimilarTaskTrainer(BaseTrainer):
         
         # Save the model
         model_name = get_config_name(self.config)
-        logger.info(f"Saving model to {model_name}")
-        trainer.save_model(model_name)
-        logger.info(f"Model saved successfully to {model_name}")
+        logger.info(f"Saving model to {OUTPUT_DIR}/{model_name}")
+        trainer.save_model(OUTPUT_DIR + "/" + model_name)
+        logger.info(f"Model saved successfully to {OUTPUT_DIR}/{model_name}")
 
 def model_already_trained(model_name):
     """Check if a model has already been trained."""

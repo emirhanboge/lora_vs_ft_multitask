@@ -27,7 +27,7 @@ class TrainingConfig:
     # Training parameters
     batch_size: int = 32
     epochs: int = 3
-    learning_rate: float = 1e-5
+    learning_rate: float = 1e-5 if task_type == "similar" else 1e-4
     weight_decay: float = 0.01
     warmup_ratio: float = 0.1
     
@@ -43,9 +43,9 @@ class TrainingConfig:
     greater_is_better: bool = False
     
     # Saving and logging
-    save_total_limit: int = 10
+    save_total_limit: int = 11 # 10 + 1 for the last model
     logging_steps: int = 100  # Increased from 10 to reduce overhead
-    save_steps: int = 5600 if task_type == "dissimilar" else 500
+    save_steps: int = None  # Will be set in post_init based on task_type
     fp16: bool = False
     bf16: bool = True
     
@@ -59,6 +59,10 @@ class TrainingConfig:
                 self.tasks = ["sst2", "mnli", "qqp"]
             else:
                 self.tasks = ["squad_v2", "codex_glue", "cnn_dailymail"]
+        
+        # Set save_steps based on task_type
+        if self.save_steps is None:  # Only set if not explicitly provided
+            self.save_steps = 5600 if self.task_type == "dissimilar" else 500
 
 # Base models for each task type
 SIMILAR_BASE_MODEL = "meta-llama/Llama-3.2-1B"  # Base LLaMA model for all training
@@ -72,10 +76,8 @@ SIMILAR_TASK_CONFIGS = [
         tasks=["sst2", "mnli", "qqp"],
         base_model=SIMILAR_BASE_MODEL,
         use_lora=False,
-        batch_size=128,
+        batch_size=64,
         epochs=3,
-        learning_rate=1e-5,
-        weight_decay=0,
     ),
     
     # LoRA configurations
@@ -85,7 +87,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=4,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     TrainingConfig(
@@ -94,7 +96,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=8,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     TrainingConfig(
@@ -103,7 +105,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=16,  # Original baseline
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     TrainingConfig(
@@ -112,7 +114,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=32,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
     TrainingConfig(
@@ -121,7 +123,7 @@ SIMILAR_TASK_CONFIGS = [
         base_model=SIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=64,
-        batch_size=32,
+        batch_size=64,
         epochs=3,
     ),
 ]
@@ -133,7 +135,7 @@ DISSIMILAR_TASK_CONFIGS = [
         tasks=["squad_v2", "codex_glue", "cnn_dailymail"],
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=False,
-        batch_size=2,  # Small batch size for longer sequences
+        batch_size=4,  # Small batch size for longer sequences
         epochs=3,
     ),
     
@@ -153,7 +155,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=8,
-        batch_size=8,
+        batch_size=4,
         epochs=3,
     ),
     TrainingConfig(
@@ -162,7 +164,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=16,
-        batch_size=8,
+        batch_size=4,
         epochs=3,
     ),
     TrainingConfig(
@@ -171,7 +173,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=32,
-        batch_size=8,
+        batch_size=4,
         epochs=3,
     ),
     TrainingConfig(
@@ -180,7 +182,7 @@ DISSIMILAR_TASK_CONFIGS = [
         base_model=DISSIMILAR_BASE_MODEL,
         use_lora=True,
         lora_rank=64,
-        batch_size=8,
+        batch_size=4,
         epochs=3,
     ),
 ]

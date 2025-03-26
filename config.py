@@ -42,10 +42,9 @@ DATASET_PATHS = {
     "sst2_mnli_qqp": "emirhanboge/sst2_mnli_qqp_llama1b_modified",
     
     # Dissimilar tasks (Generation)
-    "squad_v2": "emirhanboge/rajpurkar_squad_v2_llama1b_modified",
-    "cnn_dailymail": "emirhanboge/cnn_dailymail_llama1b_modified",
-    "codex_glue": "emirhanboge/codex_glue_llama1b_modified",
-    "qa_code_summarization": "emirhanboge/qa_code_summarization_llama1b_modified",
+    "squad_v2": "emirhanboge/squad_v2_llama1b",
+    "cnn_dailymail": "emirhanboge/cnn_dailymail_llama1b",
+    "codex_glue": "emirhanboge/codex_glue_llama1b",
 }
 
 # Model paths
@@ -65,6 +64,14 @@ MODEL_PATHS = {
     "similar_lora_16": "emirhanboge/LLaMA_1B_sst2_mnli_qqp_LoRA_16",
     "similar_lora_32": "emirhanboge/LLaMA_1B_sst2_mnli_qqp_LoRA_32",
     "similar_lora_64": "emirhanboge/LLaMA_1B_sst2_mnli_qqp_LoRA_64",
+
+    # Multi-task models (Dissimilar tasks)
+    "dissimilar_ft": "emirhanboge/LLaMA_1B_qa_code_summarization_dissimilar_FullFT",
+    "dissimilar_lora_4": "emirhanboge/LLaMA_1B_qa_code_summarization_dissimilar_LoRA_4",
+    "dissimilar_lora_8": "emirhanboge/LLaMA_1B_qa_code_summarization_dissimilar_LoRA_8",
+    "dissimilar_lora_16": "emirhanboge/LLaMA_1B_qa_code_summarization_dissimilar_LoRA_16",
+    "dissimilar_lora_32": "emirhanboge/LLaMA_1B_qa_code_summarization_dissimilar_LoRA_32",
+    "dissimilar_lora_64": "emirhanboge/LLaMA_1B_qa_code_summarization_dissimilar_LoRA_64",
 }
 
 # Task definitions
