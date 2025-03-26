@@ -109,7 +109,7 @@ python multi_task_training.py --dissimilar --full-finetune
 
 1. Performance Analysis:
 ```bash
-python performance_analysis.py
+python eval.py
 ```
 
 2. SVD Analysis:
@@ -122,22 +122,6 @@ The analysis will:
 - Generate performance plots
 - Analyze representational drift
 - Save results to JSON format
-
-## Output Structure
-
-```
-outputs/
-├── performance_analysis/
-│   ├── similar_tasks/
-│   │   ├── plots/
-│   │   └── results.json
-│   └── dissimilar_tasks/
-│       ├── plots/
-│       └── results.json
-└── svd_analysis/
-    ├── drift_plots/
-    └── results.json
-```
 
 ## Model Configurations
 
