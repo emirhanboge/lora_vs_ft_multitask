@@ -136,5 +136,7 @@ The analysis will:
 
 - LLaMA model from Meta AI
 - Hugging Face Transformers library
-- LoRA paper and implementation
 - PEFT library from Hugging Face
+
+## License
+This project is licensed under the terms of the [Creative Commons Attribution 4.0 International License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
